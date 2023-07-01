@@ -1,3 +1,19 @@
-fn main() {
-    println!("Hello, world!");
+use axum_user_jwt_template::user;
+use sqlx::SqlitePool;
+
+const DB_URL: &str = "users.db";
+
+#[tokio::main]
+async fn main() {
+    user::init_database(&DB_URL.to_string()).await;
+
+    let db = SqlitePool::connect(&DB_URL.to_string()).await.unwrap();
+
+    user::init_user_table(&db).await.unwrap();
+
+    // user::register_user(&"dan".to_string(), &"password".to_string(), &db).await.unwrap();
+    match user::login_user(&"dan".to_string(), &"password".to_string(), &db).await {
+        Some(_) => println!("user found"),
+        None => println!("No user found")
+    };
 }
