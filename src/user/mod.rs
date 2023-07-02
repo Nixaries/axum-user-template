@@ -1,10 +1,8 @@
-use std::env::consts::OS;
-
 use sqlx::{Pool, Sqlite, sqlite::SqliteQueryResult, FromRow, migrate::MigrateDatabase};
 use uuid::Uuid;
 use bcrypt::{DEFAULT_COST, hash, BcryptError};
 use chrono::{DateTime, Utc};
-use rand::{self, RngCore, Rng};
+use rand::{self,  Rng};
 
 #[derive(FromRow)]
 pub struct User {
@@ -86,7 +84,7 @@ pub struct Token {
     token_hash: String,
     user_id: String,
     valid_to: DateTime<Utc>,
-    disabled: bool
+    disabled: i64 
 }
 
 impl Token {
@@ -101,12 +99,40 @@ impl Token {
             })
             .collect();
     
-        println!("{}", token);
+        return token
+    }
 
-        token
+    pub fn new(user:&User) -> Result<Self, BcryptError>{
+        let token:String = Self::generate_session_token(32);
+
+        let hash: String = match hash(token, DEFAULT_COST) {
+            Ok(result) => result,
+            Err(err) => return Err(err)
+        };
+
+        return Ok(Self {
+            id: Uuid::new_v4().to_string(),
+            token_hash: hash,
+            user_id: user.id.clone(),
+            valid_to: Utc::now(),
+            disabled: 0 
+        });
+    }
+
+    pub async fn add_to_database(&self, db: &Pool<Sqlite>) -> Result<SqliteQueryResult, sqlx::Error> {
+        return sqlx::query(
+            &*format!("INSERT INTO sessions (id, token_hash, user_id, valid_to, disabled) \
+            VALUES ('{}', '{}', '{}', '{}', {});", self.id, self.token_hash, self.user_id, self.valid_to, self.disabled) 
+        ).execute(db).await;
     }
 }
 
-pub fn init_token_table(db:&Pool<Sqlite>) {
-
+pub async fn init_token_table(db:&Pool<Sqlite>) -> Result<SqliteQueryResult, sqlx::Error> {
+    return sqlx::query(
+        "CREATE TABLE IF NOT EXISTS sessions (\
+        id VARCHAR(256) PRIMARY KEY NOT NULL,\
+        token_hash VARCHAR(256) NOT NULL,\
+        user_id VARCHAR(256) NOT NULL,\
+        valid_to DATETIME NOT NULL,\
+        disabled INTEGER NOT NULL);").execute(db).await
 }
