@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 axum = { path = "./axum", features=["multipart"] }
 tokio = { version = "1.0", features = ["full"] }
-sqlx = { version = "0.6", features = [ "runtime-tokio-native-tls", "sqlite" ] }
+sqlx = { version = "0.6", features = [ "runtime-tokio-native-tls", "sqlite", "chrono" ] }
 uuid = {version = "1.4.0", features = ["v4"]} 
 bcrypt = "0.14.0"
 chrono = "0.4.26"

@@ -1,4 +1,4 @@
-use axum_user_jwt_template::user::{self, User, Token};
+use axum_user_jwt_template::user::{self, User, Session};
 use sqlx::SqlitePool;
 
 const DB_URL: &str = "users.db";
@@ -13,13 +13,17 @@ async fn main() {
     user::init_token_table(&db).await.unwrap();
 
     // user::register_user(&"dan".to_string(), &"password".to_string(), &db).await.unwrap();
-    match user::login_user(&"dan".to_string(), &"password".to_string(), &db).await {
-        Some(_) => println!("user found"),
-        None => println!("No user found")
-    };
+    // match user::login_user(&"dan".to_string(), &"password".to_string(), &db).await {
+    //     Some(_) => println!("user found"),
+    //     None => println!("No user found")
+    // };
 
     let user:User = User::new(&"username".to_string(), &"password".to_string()).unwrap();
     user.add_to_database(&db).await.unwrap();
-    let token:Token = Token::new(&user).unwrap();
+    let token:Session = Session::new(&user);
     token.add_to_database(&db).await.unwrap();
+
+    let token_user:User = Session::get_token_user(&token.user_id, &db).await.unwrap();
+
+    println!("{:?}", token_user);
 }

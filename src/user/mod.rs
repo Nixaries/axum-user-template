@@ -4,7 +4,7 @@ use bcrypt::{DEFAULT_COST, hash, BcryptError};
 use chrono::{DateTime, Utc};
 use rand::{self,  Rng};
 
-#[derive(FromRow)]
+#[derive(FromRow, Debug)]
 pub struct User {
     pub id: String,
     pub username: String,
@@ -79,15 +79,23 @@ pub async fn login_user(username:&String, password:&String, db: &Pool<Sqlite>) -
     };
 }
 
-pub struct Token {
-    id: String,
-    token_hash: String,
-    user_id: String,
-    valid_to: DateTime<Utc>,
-    disabled: i64 
+pub enum TokenUserResult {
+    User(User),
+    NotFound,
+    Expired,
+    Disabled
 }
 
-impl Token {
+#[derive(FromRow, Debug)]
+pub struct Session {
+    pub id: String,
+    pub token: String,
+    pub user_id: String,
+    pub valid_to: DateTime<Utc>,
+    pub disabled: i64 
+}
+
+impl Session {
     pub fn generate_session_token(length: usize) -> String {
         const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
         let mut rng = rand::thread_rng();
@@ -102,28 +110,43 @@ impl Token {
         return token
     }
 
-    pub fn new(user:&User) -> Result<Self, BcryptError>{
+    pub fn new(user:&User) -> Self {
         let token:String = Self::generate_session_token(32);
 
-        let hash: String = match hash(token, DEFAULT_COST) {
-            Ok(result) => result,
-            Err(err) => return Err(err)
-        };
+        // let hash: String = match hash(token, DEFAULT_COST) {
+        //     Ok(result) => result,
+        //     Err(err) => return Err(err)
+        // };
 
-        return Ok(Self {
+        return Self {
             id: Uuid::new_v4().to_string(),
-            token_hash: hash,
+            token,
             user_id: user.id.clone(),
             valid_to: Utc::now(),
             disabled: 0 
-        });
+        };
     }
 
     pub async fn add_to_database(&self, db: &Pool<Sqlite>) -> Result<SqliteQueryResult, sqlx::Error> {
         return sqlx::query(
-            &*format!("INSERT INTO sessions (id, token_hash, user_id, valid_to, disabled) \
-            VALUES ('{}', '{}', '{}', '{}', {});", self.id, self.token_hash, self.user_id, self.valid_to, self.disabled) 
+            &*format!("INSERT INTO sessions (id, token, user_id, valid_to, disabled) \
+            VALUES ('{}', '{}', '{}', '{}', {});", self.id, self.token, self.user_id, self.valid_to, self.disabled) 
         ).execute(db).await;
+    }
+
+
+    pub async fn get_token_user(token: &String, db: &Pool<Sqlite>) -> Result<User, sqlx::Error>{
+        let session:Session = match sqlx::query_as::<_, Session>(&*format!("SELECT * FROM sessions WHERE token = '{}';", token)).fetch_one(db).await {
+            Ok(res) => res,
+            Err(err) => return Err(err)
+        };
+
+        let user:User = match sqlx::query_as::<_, User>(&*format!("SELECT * FROM users WHERE id = '{}';", session.user_id)).fetch_one(db).await {
+            Ok(res) => res,
+            Err(err) => return Err(err)
+        };
+
+        return Ok(user);
     }
 }
 
@@ -131,7 +154,7 @@ pub async fn init_token_table(db:&Pool<Sqlite>) -> Result<SqliteQueryResult, sql
     return sqlx::query(
         "CREATE TABLE IF NOT EXISTS sessions (\
         id VARCHAR(256) PRIMARY KEY NOT NULL,\
-        token_hash VARCHAR(256) NOT NULL,\
+        token VARCHAR(256) NOT NULL,\
         user_id VARCHAR(256) NOT NULL,\
         valid_to DATETIME NOT NULL,\
         disabled INTEGER NOT NULL);").execute(db).await
