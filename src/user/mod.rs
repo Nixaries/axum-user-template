@@ -1,6 +1,10 @@
+use std::env::consts::OS;
+
 use sqlx::{Pool, Sqlite, sqlite::SqliteQueryResult, FromRow, migrate::MigrateDatabase};
 use uuid::Uuid;
 use bcrypt::{DEFAULT_COST, hash, BcryptError};
+use chrono::{DateTime, Utc};
+use rand::{self, RngCore, Rng};
 
 #[derive(FromRow)]
 pub struct User {
@@ -60,7 +64,6 @@ pub async fn register_user(username:&String, password:&String, db:&Pool<Sqlite>)
     match new_user.add_to_database(db).await {
         Ok(_) => (),
         Err(_) => return Err(())
-        
     }
 
     return Ok(new_user);
@@ -76,4 +79,34 @@ pub async fn login_user(username:&String, password:&String, db: &Pool<Sqlite>) -
         Ok(valid) => if valid {Some(user)} else {None}, 
         Err(_) => None 
     };
+}
+
+pub struct Token {
+    id: String,
+    token_hash: String,
+    user_id: String,
+    valid_to: DateTime<Utc>,
+    disabled: bool
+}
+
+impl Token {
+    pub fn generate_session_token(length: usize) -> String {
+        const CHARSET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        let mut rng = rand::thread_rng();
+    
+        let token: String = (0..length)
+            .map(|_| {
+                let idx = rng.gen_range(0..CHARSET.len());
+                CHARSET[idx] as char
+            })
+            .collect();
+    
+        println!("{}", token);
+
+        token
+    }
+}
+
+pub fn init_token_table(db:&Pool<Sqlite>) {
+
 }

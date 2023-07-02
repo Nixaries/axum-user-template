@@ -16,4 +16,6 @@ async fn main() {
         Some(_) => println!("user found"),
         None => println!("No user found")
     };
+
+    user::Token::generate_session_token(32);
 }
