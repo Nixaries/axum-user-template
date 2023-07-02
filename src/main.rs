@@ -18,12 +18,12 @@ async fn main() {
     //     None => println!("No user found")
     // };
 
-    let user:User = User::new(&"username".to_string(), &"password".to_string()).unwrap();
-    user.add_to_database(&db).await.unwrap();
-    let token:Session = Session::new(&user);
-    token.add_to_database(&db).await.unwrap();
-
-    let token_user:User = Session::get_token_user(&token.user_id, &db).await.unwrap();
+    // let user:User = User::new(&"username".to_string(), &"password".to_string()).unwrap();
+    // user.add_to_database(&db).await.unwrap();
+    // let token:Session = Session::new(&user);
+    // token.add_to_database(&db).await.unwrap();
+    //
+    let token_user:User = Session::get_token_user(&"7yWmHbTFF9D2Jnrbh0XoyVLVXzsGD48k".to_string(), &db).await.unwrap();
 
     println!("{:?}", token_user);
 }

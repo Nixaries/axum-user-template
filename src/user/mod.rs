@@ -91,7 +91,7 @@ pub struct Session {
     pub id: String,
     pub token: String,
     pub user_id: String,
-    pub valid_to: DateTime<Utc>,
+    pub valid_to: sqlx::types::chrono::DateTime<Utc>,
     pub disabled: i64 
 }
 
@@ -136,12 +136,12 @@ impl Session {
 
 
     pub async fn get_token_user(token: &String, db: &Pool<Sqlite>) -> Result<User, sqlx::Error>{
-        let session:Session = match sqlx::query_as::<_, Session>(&*format!("SELECT * FROM sessions WHERE token = '{}';", token)).fetch_one(db).await {
+        let user_id_query = match sqlx::query!("SELECT user_id FROM sessions WHERE token = ?;", token).fetch_one(db).await {
             Ok(res) => res,
             Err(err) => return Err(err)
         };
 
-        let user:User = match sqlx::query_as::<_, User>(&*format!("SELECT * FROM users WHERE id = '{}';", session.user_id)).fetch_one(db).await {
+        let user = match sqlx::query_as!(User, "SELECT * FROM users WHERE id = ?;", user_id_query.user_id).fetch_one(db).await {
             Ok(res) => res,
             Err(err) => return Err(err)
         };
