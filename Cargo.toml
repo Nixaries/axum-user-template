@@ -13,3 +13,4 @@ uuid = {version = "1.4.0", features = ["v4"]}
 bcrypt = "0.14.0"
 chrono = "0.4.26"
 rand = {version = "0.8.5", features = ["getrandom"]}
+serde = {version = "1.0.164", features = ["derive"]}
