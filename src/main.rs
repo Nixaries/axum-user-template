@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Instant};
 
 use axum::{Router, extract::{self, State}, Form, Json, routing::post};
 use axum_user_jwt_template::user::{self, User, Session};
@@ -43,14 +43,32 @@ struct LoginForm {
 }
 
 async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Json<TokenResult> {
+    // let start = Instant::now();
+
     let user = match user::login_user(&data.username, &data.password, &db).await {
         Some(user) => user,
         None => panic!("Not valid login")
     };
 
+    // let duration = start.elapsed();
+    //
+    // println!("Time for login_user function: {:?}", duration);
+    //
+    // let start = Instant::now();
+
     let token = user::Session::new(&user);
 
+    // let duration = start.elapsed();
+
+    // println!("Time for generating token function: {:?}", duration);
+
+    // let start = Instant::now();
+
     token.add_to_database(&db).await.unwrap();
+
+    // let duration = start.elapsed();
+    //
+    // println!("Time for adding token to database: {:?}", duration);
 
     let token_result = TokenResult {
         token: token.token
