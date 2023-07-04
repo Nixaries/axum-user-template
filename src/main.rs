@@ -21,8 +21,6 @@ async fn main() {
     user::init_user_table(&db).await.unwrap();
     user::init_token_table(&db).await.unwrap();
 
-    // let db_ref = Arc::new(db);
-
     let app = Router::new()
         .route("/login", post(login))
         .route("/register", post(register))
@@ -31,21 +29,6 @@ async fn main() {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
 
     axum::serve(listener, app).await.unwrap();
-
-    // user::register_user(&"dan".to_string(), &"password".to_string(), &db).await.unwrap();
-    // match user::login_user(&"dan".to_string(), &"password".to_string(), &db).await {
-    //     Some(_) => println!("user found"),
-    //     None => println!("No user found")
-    // };
-
-    // let user:User = User::new(&"username".to_string(), &"password".to_string()).unwrap();
-    // user.add_to_database(&db).await.unwrap();
-    // let token:Session = Session::new(&user);
-    // token.add_to_database(&db).await.unwrap();
-    //
-    // let token_user:User = Session::get_token_user(&"7yWmHbTFF9D2Jnrbh0XoyVLVXzsGD48k".to_string(), &db).await.unwrap();
-    //
-    // println!("{:?}", token_user);
 }
 
 #[derive(Deserialize, Serialize)]
@@ -67,7 +50,7 @@ async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> J
 
     let token = user::Session::new(&user);
 
-    token.add_to_database(&db).await;
+    token.add_to_database(&db).await.unwrap();
 
     let token_result = TokenResult {
         token: token.token
@@ -76,8 +59,14 @@ async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> J
     return Json(token_result);
 }
 
-async fn register(Form(login_form):Form<LoginForm>) -> Json<TokenResult> {
-    let user = User::new(&login_form.username, &login_form.password);
+async fn register(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Json<TokenResult> {
+    let user = User::new(&data.username, &data.password).unwrap();
+    user.add_to_database(&db).await.unwrap();
+    let token = user::Session::new(&user);
+    token.add_to_database(&db).await.unwrap();
+    let token_result = TokenResult {
+        token: token.token
+    };
 
-    todo!();
+    return Json(token_result);
 }
