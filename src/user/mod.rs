@@ -1,8 +1,16 @@
-use sqlx::{Pool, Sqlite, sqlite::SqliteQueryResult, FromRow, migrate::MigrateDatabase};
+use std::time::Instant;
+
+use sqlx::{Pool, Sqlite, sqlite::{SqliteQueryResult, SqliteRow}, FromRow, migrate::MigrateDatabase};
 use uuid::Uuid;
 use bcrypt::{DEFAULT_COST, hash, BcryptError};
 use chrono::{DateTime, Utc};
 use rand::{self,  Rng};
+
+pub enum AddUserResult {
+    Success,
+    UsernameTaken,
+    DatabaseError
+}
 
 #[derive(FromRow, Debug)]
 pub struct User {
@@ -25,11 +33,21 @@ impl User {
         });
     }
 
-    pub async fn add_to_database(&self, db: &Pool<Sqlite>) -> Result<SqliteQueryResult, sqlx::Error> {
-        return sqlx::query(
-            &*format!("INSERT INTO users (id, username, password_hash) \
-            VALUES ('{}', '{}', '{}');", self.id, self.username, self.password_hash) 
-        ).execute(db).await;
+    pub async fn add_to_database(&self, db: &Pool<Sqlite>) -> AddUserResult {
+        let existing_user = sqlx::query!("SELECT * FROM users WHERE username = ?;", self.username).fetch_optional(db).await;
+
+        match existing_user {
+            Ok(Some(_)) => return AddUserResult::UsernameTaken,
+            Ok(None) => (),
+            Err(err) => return AddUserResult::DatabaseError 
+        };
+
+        match sqlx::query!(
+            "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?);", 
+            self.id, self.username, self.password_hash).execute(db).await {
+            Ok(_) => return AddUserResult::Success,
+            Err(err) => return AddUserResult::DatabaseError
+        }
     }
 }
 
@@ -45,30 +63,17 @@ pub async fn init_database(db_url:&String) {
     }
 }
 
-pub async fn init_user_table(db: &Pool<Sqlite>) ->  Result<SqliteQueryResult, sqlx::Error>{
-    return sqlx::query(
-        "CREATE TABLE IF NOT EXISTS users (\
-        id VARCHAR(256) PRIMARY KEY NOT NULL,\
-        username VARCHAR(256) NOT NULL,\
-        password_hash VARCHAR(256) NOT NULL);").execute(db).await
-}
-
-pub async fn register_user(username:&String, password:&String, db:&Pool<Sqlite>) -> Result<User, ()> {
+pub async fn register_user(username:&String, password:&String, db:&Pool<Sqlite>) -> AddUserResult{
     let new_user:User = match User::new(&username, &password) {
         Ok(res) => res,
-        Err(_) => return Err(())
+        Err(_) => return AddUserResult::DatabaseError
     };
 
-    match new_user.add_to_database(db).await {
-        Ok(_) => (),
-        Err(_) => return Err(())
-    }
-
-    return Ok(new_user);
+    return new_user.add_to_database(db).await;
 } 
 
 pub async fn login_user(username:&String, password:&String, db: &Pool<Sqlite>) -> Option<User> {
-    let user:User = match sqlx::query_as::<_, User>(&*format!("SELECT * FROM users WHERE username = '{}'", username)).fetch_one(db).await {
+    let user:User = match sqlx::query_as!(User, "SELECT * FROM users WHERE username = ?;", username).fetch_one(db).await {
         Ok(result) => result,
         Err(_) => return None
     };
@@ -148,14 +153,4 @@ impl Session {
 
         return Ok(user);
     }
-}
-
-pub async fn init_token_table(db:&Pool<Sqlite>) -> Result<SqliteQueryResult, sqlx::Error> {
-    return sqlx::query(
-        "CREATE TABLE IF NOT EXISTS sessions (\
-        id VARCHAR(256) PRIMARY KEY NOT NULL,\
-        token VARCHAR(256) NOT NULL,\
-        user_id VARCHAR(256) NOT NULL,\
-        valid_to DATETIME NOT NULL,\
-        disabled INTEGER NOT NULL);").execute(db).await
 }

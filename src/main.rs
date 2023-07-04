@@ -1,16 +1,9 @@
-use std::{sync::Arc, time::Instant};
-
-use axum::{Router, extract::{self, State}, Form, Json, routing::post};
+use axum::{Router, extract::{self, State}, Form, Json, routing::post, http::StatusCode};
 use axum_user_jwt_template::user::{self, User, Session};
 use sqlx::{SqlitePool, Pool, Sqlite};
 use serde::{Deserialize, Serialize};
 
 const DB_URL: &str = "users.db";
-
-#[derive(Clone)]
-struct AppContext {
-    db: Pool<Sqlite>
-}
 
 #[tokio::main]
 async fn main() {
@@ -18,12 +11,10 @@ async fn main() {
 
     let db = SqlitePool::connect(&DB_URL.to_string()).await.unwrap();
 
-    user::init_user_table(&db).await.unwrap();
-    user::init_token_table(&db).await.unwrap();
-
     let app = Router::new()
         .route("/login", post(login))
         .route("/register", post(register))
+        .route("/verify", post(verify))
         .with_state(db);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await.unwrap();
@@ -43,32 +34,14 @@ struct LoginForm {
 }
 
 async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Json<TokenResult> {
-    // let start = Instant::now();
-
     let user = match user::login_user(&data.username, &data.password, &db).await {
         Some(user) => user,
         None => panic!("Not valid login")
     };
-
-    // let duration = start.elapsed();
-    //
-    // println!("Time for login_user function: {:?}", duration);
-    //
-    // let start = Instant::now();
-
+    
     let token = user::Session::new(&user);
 
-    // let duration = start.elapsed();
-
-    // println!("Time for generating token function: {:?}", duration);
-
-    // let start = Instant::now();
-
     token.add_to_database(&db).await.unwrap();
-
-    // let duration = start.elapsed();
-    //
-    // println!("Time for adding token to database: {:?}", duration);
 
     let token_result = TokenResult {
         token: token.token
@@ -77,13 +50,26 @@ async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> J
     return Json(token_result);
 }
 
-async fn register(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Json<TokenResult> {
+async fn register(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Result<String, StatusCode> {
     let user = User::new(&data.username, &data.password).unwrap();
-    user.add_to_database(&db).await.unwrap();
-    let token = user::Session::new(&user);
-    token.add_to_database(&db).await.unwrap();
+
+    match user.add_to_database(&db).await {
+        user::AddUserResult::Success => return Ok("Success".to_string()),
+        user::AddUserResult::UsernameTaken => return Err(StatusCode::UNAUTHORIZED),
+        user::AddUserResult::DatabaseError => return Err(StatusCode::INTERNAL_SERVER_ERROR) 
+    };
+}
+
+#[derive(Deserialize, Debug)]
+struct TokenInput {
+    token: String
+}
+
+async fn verify(State(db): State<Pool<Sqlite>>, Json(data): Json<TokenInput>) -> Json<TokenResult> {
+    let user = user::Session::get_token_user(&data.token, &db).await.unwrap();
+
     let token_result = TokenResult {
-        token: token.token
+        token: user.username
     };
 
     return Json(token_result);

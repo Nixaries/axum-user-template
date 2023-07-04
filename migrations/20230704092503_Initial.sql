@@ -1,0 +1,14 @@
+-- Add migration script here
+CREATE TABLE IF NOT EXISTS users (
+  id VARCHAR(256) PRIMARY KEY NOT NULL,
+  username VARCHAR(256) NOT NULL,
+  password_hash VARCHAR(256) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id VARCHAR(256) PRIMARY KEY NOT NULL,
+  token VARCHAR(256) NOT NULL,
+  user_id VARCHAR(256) NOT NULL,
+  valid_to DATETIME NOT NULL,
+  disabled INTEGER NOT NULL
+);
