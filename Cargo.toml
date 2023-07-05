@@ -14,3 +14,4 @@ bcrypt = "0.14.0"
 chrono = "0.4.26"
 rand = {version = "0.8.5", features = ["getrandom"]}
 serde = {version = "1.0.164", features = ["derive"]}
+serde_json = "1.0.100"
