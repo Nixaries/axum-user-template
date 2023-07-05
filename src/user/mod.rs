@@ -1,9 +1,8 @@
-use std::time::Instant;
-
-use sqlx::{Pool, Sqlite, sqlite::{SqliteQueryResult, SqliteRow}, FromRow, migrate::MigrateDatabase};
+use serde::Serialize;
+use sqlx::{Pool, Sqlite, sqlite::SqliteQueryResult, FromRow, migrate::MigrateDatabase};
 use uuid::Uuid;
 use bcrypt::{DEFAULT_COST, hash, BcryptError};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use rand::{self,  Rng};
 
 pub enum AddUserResult {
@@ -12,7 +11,7 @@ pub enum AddUserResult {
     DatabaseError
 }
 
-#[derive(FromRow, Debug)]
+#[derive(FromRow, Debug, Serialize)]
 pub struct User {
     pub id: String,
     pub username: String,
@@ -39,14 +38,14 @@ impl User {
         match existing_user {
             Ok(Some(_)) => return AddUserResult::UsernameTaken,
             Ok(None) => (),
-            Err(err) => return AddUserResult::DatabaseError 
+            Err(_) => return AddUserResult::DatabaseError 
         };
 
         match sqlx::query!(
             "INSERT INTO users (id, username, password_hash) VALUES (?, ?, ?);", 
             self.id, self.username, self.password_hash).execute(db).await {
             Ok(_) => return AddUserResult::Success,
-            Err(err) => return AddUserResult::DatabaseError
+            Err(_) => return AddUserResult::DatabaseError
         }
     }
 }
@@ -89,6 +88,13 @@ pub enum TokenUserResult {
     NotFound,
     Expired,
     Disabled
+}
+
+pub enum GetTokenUserResult {
+    Success(User),
+    NotFound,
+    Unauthorized,
+    DatabaseError,
 }
 
 #[derive(FromRow, Debug)]
@@ -140,17 +146,21 @@ impl Session {
     }
 
 
-    pub async fn get_token_user(token: &String, db: &Pool<Sqlite>) -> Result<User, sqlx::Error>{
-        let user_id_query = match sqlx::query!("SELECT user_id FROM sessions WHERE token = ?;", token).fetch_one(db).await {
-            Ok(res) => res,
-            Err(err) => return Err(err)
+    pub async fn get_token_user(token: &String, db: &Pool<Sqlite>) -> GetTokenUserResult {
+        let user_id_query = match sqlx::query!("SELECT user_id FROM sessions WHERE token = ?;", token).fetch_optional(db).await {
+            Ok(res) => match res {
+                Some(res) => res,
+                None => return GetTokenUserResult::NotFound
+            },
+            Err(_) => return GetTokenUserResult::DatabaseError 
         };
 
-        let user = match sqlx::query_as!(User, "SELECT * FROM users WHERE id = ?;", user_id_query.user_id).fetch_one(db).await {
-            Ok(res) => res,
-            Err(err) => return Err(err)
+        return match sqlx::query_as!(User, "SELECT * FROM users WHERE id = ?;", user_id_query.user_id).fetch_optional(db).await {
+            Ok(res) => match res {
+                Some(res) => GetTokenUserResult::Success(res),
+                None => GetTokenUserResult::NotFound
+            },
+            Err(_) => GetTokenUserResult::DatabaseError 
         };
-
-        return Ok(user);
     }
 }

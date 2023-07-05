@@ -2,6 +2,7 @@ use axum::{Router, extract::{self, State}, Form, Json, routing::post, http::Stat
 use axum_user_jwt_template::user::{self, User, Session};
 use sqlx::{SqlitePool, Pool, Sqlite};
 use serde::{Deserialize, Serialize};
+use serde_json::Result;
 
 const DB_URL: &str = "users.db";
 
@@ -33,10 +34,10 @@ struct LoginForm {
     password: String
 }
 
-async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Json<TokenResult> {
+async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> std::result::Result<String, StatusCode> {
     let user = match user::login_user(&data.username, &data.password, &db).await {
         Some(user) => user,
-        None => panic!("Not valid login")
+        None => return Err(StatusCode::UNAUTHORIZED)
     };
     
     let token = user::Session::new(&user);
@@ -47,10 +48,13 @@ async fn login(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> J
         token: token.token
     };
 
-    return Json(token_result);
+    return match serde_json::to_string(&token_result) {
+        Ok(token) => Ok(token),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR)
+    };
 }
 
-async fn register(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> Result<String, StatusCode> {
+async fn register(State(db): State<Pool<Sqlite>>, Json(data): Json<LoginForm>) -> std::result::Result<String, StatusCode> {
     let user = User::new(&data.username, &data.password).unwrap();
 
     match user.add_to_database(&db).await {
@@ -65,12 +69,16 @@ struct TokenInput {
     token: String
 }
 
-async fn verify(State(db): State<Pool<Sqlite>>, Json(data): Json<TokenInput>) -> Json<TokenResult> {
-    let user = user::Session::get_token_user(&data.token, &db).await.unwrap();
-
-    let token_result = TokenResult {
-        token: user.username
+async fn verify(State(db): State<Pool<Sqlite>>, Json(data): Json<TokenInput>) -> std::result::Result<StatusCode, StatusCode> {
+    let user = match user::Session::get_token_user(&data.token, &db).await {
+        user::GetTokenUserResult::Success(user) => user, 
+        user::GetTokenUserResult::NotFound => return Err(StatusCode::UNAUTHORIZED), 
+        user::GetTokenUserResult::Unauthorized => return Err(StatusCode::UNAUTHORIZED),
+        user::GetTokenUserResult::DatabaseError => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
 
-    return Json(token_result);
+    return match serde_json::to_string(&user) {
+        Ok(_) => Ok(StatusCode::OK),
+        Err(_) => Err(StatusCode::INTERNAL_SERVER_ERROR)
+     }
 }
